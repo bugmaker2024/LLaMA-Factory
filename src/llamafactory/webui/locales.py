@@ -1452,6 +1452,39 @@ LOCALES = {
             "value": "开始导出",
         },
     },
+    "tensorboard_tab": {
+        "en": {
+            "label": "TensorBoard settings",
+        },
+        "ru": {
+            "label": "Настройки TensorBoard",
+        },
+        "zh": {
+            "label": "TensorBoard 设置",
+        },
+    },
+    "start_tensorboard_btn": {
+        "en": {
+            "value": "Start TensorBoard",
+        },
+        "ru": {
+            "value": "Запустить TensorBoard",
+        },
+        "zh": {
+            "value": "启动 TensorBoard",
+        },
+    },
+    "tensorboard_url": {
+        "en": {
+            "label": "TensorBoard URL",
+        },
+        "ru": {
+            "label": "URL TensorBoard",
+        },
+        "zh": {
+            "label": "TensorBoard URL",
+        },
+    }
 }
 
 

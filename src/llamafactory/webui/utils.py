@@ -1,3 +1,4 @@
+import importlib
 import json
 import os
 from datetime import datetime
@@ -164,3 +165,12 @@ def save_ds_config() -> None:
     ds_config["zero_optimization"]["offload_param"] = offload_config
     with open(os.path.join(DEFAULT_CACHE_DIR, "ds_z3_offload_config.json"), "w", encoding="utf-8") as f:
         json.dump(ds_config, f, indent=2)
+
+def parent_dir(dir, level=1):
+    level = max(1, level)
+    if level == 1:
+        return os.path.dirname(dir)
+    return parent_dir(os.path.dirname(dir), level - 1)
+
+def is_tensorboard_available():
+    return importlib.util.find_spec("tensorboard") is not None or importlib.util.find_spec("tensorboardX") is not None
