@@ -12,8 +12,8 @@ from ..extras.misc import is_gpu_or_npu_available, torch_gc
 from ..extras.packages import is_gradio_available
 from .common import DEFAULT_CACHE_DIR, get_module, get_save_dir, load_args, load_config, save_args
 from .locales import ALERTS
-from .utils import gen_cmd, get_eval_results, get_trainer_info, save_cmd
-
+from .utils import gen_cmd, get_eval_results, get_trainer_info, save_cmd, parent_dir, is_tensorboard_available
+from .process_utils import run_command_in_subprocess, run_and_get_log, close_loop
 
 if is_gradio_available():
     import gradio as gr
@@ -36,12 +36,14 @@ class Runner:
         """ State """
         self.aborted = False
         self.running = False
+        self.handlers = {}
 
     def set_abort(self) -> None:
         self.aborted = True
         if self.trainer is not None:
             for children in psutil.Process(self.trainer.pid).children():  # abort the child process
                 os.kill(children.pid, signal.SIGABRT)
+        self.terminate_handlers()
 
     def _initialize(self, data: Dict["Component", Any], do_train: bool, from_preview: bool) -> str:
         get = lambda elem_id: data[self.manager.get_elem_by_id(elem_id)]
@@ -377,3 +379,35 @@ class Runner:
             output_dict[self.manager.get_elem_by_id(elem_id)] = value
 
         return output_dict
+
+    def start_tensorboard(self):
+        if not self.running:
+            return 'No training is running.'
+
+        if not is_tensorboard_available():
+            return 'Tensorboard is not available, make sure you have installed it.'
+
+        get = lambda elem_id: self.running_data[self.manager.get_elem_by_id(elem_id)]
+        cwd = parent_dir(os.path.abspath(__file__))
+        project_root = parent_dir(cwd, level=3)
+        output_dir = get_save_dir(get("top.model_name"), get("top.finetuning_type"), get("train.output_dir"))
+        logging_dir = os.path.join(project_root, output_dir, 'runs')
+
+        if logging_dir in self.handlers:
+            return self.handlers[logging_dir][1]
+
+        handler, lines = run_command_in_subprocess('tensorboard', '--logdir', logging_dir, timeout=2)
+        localhost_addr = ''
+        for line in lines:
+            if 'http://localhost:' in line:
+                line = line[line.index('http://localhost:'):]
+                localhost_addr = line[:line.index(' ')]
+
+        self.handlers[logging_dir] = (handler, localhost_addr)
+        return localhost_addr
+
+    def terminate_handlers(self):
+        for handler in self.handlers:
+            close_loop(handler[0])
+        self.handlers.clear()
+

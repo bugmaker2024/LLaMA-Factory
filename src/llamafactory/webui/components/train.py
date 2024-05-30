@@ -255,6 +255,11 @@ def create_train_tab(engine: "Engine") -> Dict[str, "Component"]:
 
     with gr.Row():
         with gr.Column(scale=3):
+            with gr.Column(scale=3):
+                with gr.Accordion(open=False) as tensorboard_tab:
+                    with gr.Row():
+                        start_tensorboard_btn = gr.Button()
+                        tensorboard_url = gr.Textbox(interactive=False)
             with gr.Row():
                 output_dir = gr.Textbox()
                 config_path = gr.Textbox()
@@ -291,6 +296,9 @@ def create_train_tab(engine: "Engine") -> Dict[str, "Component"]:
             progress_bar=progress_bar,
             output_box=output_box,
             loss_viewer=loss_viewer,
+            tensorboard_tab=tensorboard_tab,
+            start_tensorboard_btn=start_tensorboard_btn,
+            tensorboard_url=tensorboard_url,
         )
     )
     output_elems = [output_box, progress_bar, loss_viewer]
@@ -314,5 +322,6 @@ def create_train_tab(engine: "Engine") -> Dict[str, "Component"]:
         [reward_model],
         queue=False,
     ).then(autoset_packing, [training_stage], [packing], queue=False)
+    start_tensorboard_btn.click(fn=engine.runner.start_tensorboard, inputs=None, outputs=tensorboard_url)
 
     return elem_dict

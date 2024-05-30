@@ -1,3 +1,4 @@
+import os
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import torch
@@ -26,6 +27,7 @@ logger = get_logger(__name__)
 def run_exp(args: Optional[Dict[str, Any]] = None, callbacks: List["TrainerCallback"] = []) -> None:
     model_args, data_args, training_args, finetuning_args, generating_args = get_train_args(args)
     callbacks.append(LogCallback(training_args.output_dir))
+    training_args.logging_dir = os.path.join(training_args.output_dir, 'runs')
 
     if finetuning_args.stage == "pt":
         run_pt(model_args, data_args, training_args, finetuning_args, callbacks)
