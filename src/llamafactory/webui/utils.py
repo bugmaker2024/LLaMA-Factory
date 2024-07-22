@@ -38,12 +38,15 @@ def abort_process(pid: int) -> None:
     r"""
     Aborts the processes recursively in a bottom-up way.
     """
-    children = psutil.Process(pid).children()
-    if children:
-        for child in children:
-            abort_process(child.pid)
+    try:
+        children = psutil.Process(pid).children()
+        if children:
+            for child in children:
+                abort_process(child.pid)
 
-    os.kill(pid, signal.SIGABRT)
+        os.kill(pid, signal.SIGABRT)
+    except Exception:
+        pass
 
 
 def can_quantize(finetuning_type: str) -> "gr.Dropdown":
@@ -110,7 +113,11 @@ def gen_cmd(args: Dict[str, Any]) -> str:
     for k, v in clean_cmd(args).items():
         cmd_lines.append("    --{} {} ".format(k, str(v)))
 
-    cmd_text = "\\\n".join(cmd_lines)
+    if os.name == "nt":
+        cmd_text = "`\n".join(cmd_lines)
+    else:
+        cmd_text = "\\\n".join(cmd_lines)
+
     cmd_text = "```bash\n{}\n```".format(cmd_text)
     return cmd_text
 
