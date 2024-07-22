@@ -35,6 +35,7 @@ from transformers.utils import (
 
 from ..extras.constants import TRAINER_LOG, V_HEAD_SAFE_WEIGHTS_NAME, V_HEAD_WEIGHTS_NAME
 from ..extras.logging import LoggerHandler, get_logger
+from ..extras.logsave.save import save_logs
 
 
 if is_safetensors_available():
@@ -305,6 +306,7 @@ class LogCallback(TrainerCallback):
             throughput="{:.2f}".format(state.num_input_tokens_seen / (time.time() - self.start_time)),
             total_tokens=state.num_input_tokens_seen,
         )
+        save_logs(logs)
         logs = {k: v for k, v in logs.items() if v is not None}
         if self.webui_mode and all(key in logs for key in ["loss", "learning_rate", "epoch"]):
             logger.info(
