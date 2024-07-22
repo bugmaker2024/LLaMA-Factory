@@ -35,7 +35,7 @@ from transformers.utils import (
 
 from ..extras.constants import TRAINER_LOG, V_HEAD_SAFE_WEIGHTS_NAME, V_HEAD_WEIGHTS_NAME
 from ..extras.logging import LoggerHandler, get_logger
-from ..extras.logsave.save import save_logs
+from ..extras.logsave.save import save_logs, list_checkpoints
 
 
 if is_safetensors_available():
@@ -250,6 +250,7 @@ class LogCallback(TrainerCallback):
         r"""
         Event called at the end of training.
         """
+        list_checkpoints(args.output_dir)
         self._close_thread_pool()
 
     def on_substep_end(self, args: "TrainingArguments", state: "TrainerState", control: "TrainerControl", **kwargs):
