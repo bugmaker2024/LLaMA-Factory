@@ -41,6 +41,7 @@ class LogSaver:
         timestamp = time.time()
         log_entries["task_id"] = task_id
         log_entries["created_at"] = int(timestamp)
+        log_entries["DeleteAt"] = 0
         self.collection.insert_one(log_entries)
 
     def list_checkpoints(self, output_dir: str):
@@ -53,8 +54,13 @@ class LogSaver:
                 print("TASK_ID is not set, skip listing checkpoints.")
                 return
             # find all dirs start with "checkpoint-"
+            record = self.ckpt_collection.find_one({"task_id": task_id})
+            if record and "checkpoints" in record and len(record["checkpoints"]) > 0:
+                print(f"Checkpoints already listed for task {task_id}, skip listing.")
+                return
+
             checkpoints = [d for d in os.listdir(output_dir) if d.startswith("checkpoint-")]
-            self.ckpt_collection.insert_one({"task_id": task_id, "checkpoints": checkpoints})
+            self.ckpt_collection.insert_one({"task_id": task_id, "checkpoints": checkpoints, "DeleteAt": 0})
         except Exception as e:
             print(f"Failed to list checkpoints: {e}")
 
@@ -78,6 +84,7 @@ def save_logs(log_entries: dict):
         saver.save(log_entries)
     except Exception as e:
         print(f"Failed to save logs: {e}")
+
 
 def list_checkpoints(output_dir: str):
     global saver
