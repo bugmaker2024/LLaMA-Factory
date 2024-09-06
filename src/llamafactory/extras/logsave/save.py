@@ -58,8 +58,14 @@ class LogSaver:
                 print(f"Checkpoints already listed for task {task_id}, skip listing.")
                 return
 
+            def rename_checkpoint_dirs(checkpoints: list[str]):
+                new_names = [(ckpt, ckpt.replace('-', '-step')) for ckpt in checkpoints]
+                for old_name,new_name in new_names:
+                    os.rename(f"{output_dir}/{old_name}", f"{output_dir}/{new_name}")
+
             # find all dirs start with "checkpoint-"
             checkpoints = [d for d in os.listdir(output_dir) if d.startswith("checkpoint-")]
+            rename_checkpoint_dirs(checkpoints)
             self.ckpt_collection.insert_one({"task_id": task_id, "checkpoints": checkpoints, "DeleteAt": 0})
         except Exception as e:
             print(f"Failed to list checkpoints: {e}")
