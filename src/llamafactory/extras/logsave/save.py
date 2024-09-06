@@ -63,7 +63,7 @@ class LogSaver:
                 for old_name,new_name in new_names:
                     os.rename(f"{output_dir}/{old_name}", f"{output_dir}/{new_name}")
 
-                return [names[0] for names in new_names]
+                return [names[1] for names in new_names]
 
             # find all dirs start with "checkpoint-"
             checkpoints = [d for d in os.listdir(output_dir) if d.startswith("checkpoint-")]
