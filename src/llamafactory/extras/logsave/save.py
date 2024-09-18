@@ -59,7 +59,9 @@ class LogSaver:
                 return
 
             def rename_checkpoint_dirs(checkpoints: list[str]):
-                new_names = [(ckpt, ckpt.replace('-', '-step')) for ckpt in checkpoints]
+                new_names = [(ckpt, ckpt.replace('-', '-step')) for ckpt in checkpoints if 'step' not in ckpt]
+                if not new_names:
+                    return checkpoints
                 for old_name,new_name in new_names:
                     os.rename(f"{output_dir}/{old_name}", f"{output_dir}/{new_name}")
 
