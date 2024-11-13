@@ -49,6 +49,7 @@ from transformers.utils import cached_file
 
 from ..data import get_template_and_fix_tokenizer
 from ..extras.constants import CHOICES, SUBJECTS
+from ..extras.logsave.save import save_metrics
 from ..hparams import get_eval_args
 from ..model import load_model, load_tokenizer
 from .template import get_eval_template
@@ -131,6 +132,7 @@ class Evaluator:
 
         pbar.close()
         self._save_results(category_corrects, results)
+        save_metrics(category_corrects, is_eval=True)
 
     def _save_results(self, category_corrects: Dict[str, np.ndarray], results: Dict[str, Dict[int, str]]) -> None:
         score_info = "\n".join(

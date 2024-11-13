@@ -1,7 +1,9 @@
+import copy
 import os
 import time
 from typing import Optional
 
+import numpy as np
 from pymongo import MongoClient
 
 from .mongodb import default_client
@@ -18,6 +20,9 @@ default_collection = "metrics"
 ckpt_collection_key = "MONGODB_CKPT_COLLECTION"
 default_ckpt_collection = "checkpoints"
 
+general_collection = "general"
+custom_collection = "custom"
+
 
 class LogSaver:
     mongo_client: Optional[MongoClient] = None
@@ -29,6 +34,7 @@ class LogSaver:
         collection_name = os.environ.get(collection_key, default_collection)
         self.collection = self.db[collection_name]
         self.ckpt_collection = self.db[os.environ.get(ckpt_collection_key, default_ckpt_collection)]
+        self.general_collection = self.db['general']
 
     def save(self, log_entries: dict):
         """Save task logs to MongoDB
@@ -74,6 +80,20 @@ class LogSaver:
         except Exception as e:
             print(f"Failed to list checkpoints: {e}")
 
+    def save_predict_or_eval_metrics(self, data: dict, collection_name: str):
+        task_id = os.environ.get("TASK_ID", "unknown")
+        if not task_id or task_id == 'unknown':
+            return
+        timestamp = time.time()
+        metrics = copy.deepcopy(data)
+        metrics['task_id'] = task_id
+        metrics["created_at"] = int(timestamp)
+        metrics["DeleteAt"] = 0
+        if not collection_name:
+            raise ValueError("collection_name is required")
+        collection = self.db[collection_name]
+        collection.insert_one(metrics)
+
 
 saver: Optional[LogSaver] = None
 
@@ -104,3 +124,23 @@ def list_checkpoints(output_dir: str):
         saver.list_checkpoints(output_dir)
     except Exception as e:
         print(f"Failed to list checkpoints: {e}")
+
+
+def save_metrics(data: dict, is_eval=False):
+    global saver
+    try:
+        if saver is None:
+            saver = LogSaver()
+
+        if is_eval:
+            data_to_save = {
+                category_name: 100 * np.mean(category_correct)
+                for category_name, category_correct in data.items()
+                if len(category_correct)
+            }
+        else:
+            data_to_save = data
+
+        saver.save_predict_or_eval_metrics(data_to_save, general_collection if is_eval else custom_collection)
+    except Exception as e:
+        print(f"failed to save metrics: {e}")
