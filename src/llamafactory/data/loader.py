@@ -271,6 +271,15 @@ def get_dataset(
         if "train" in dataset_dict:
             dataset_module["train_dataset"] = dataset_dict["train"]
         if "validation" in dataset_dict:
-            dataset_module["eval_dataset"] = dataset_dict["validation"]
+            max_eval_size = 1000
+            if len(dataset_dict["validation"]) > max_eval_size:
+                print(
+                    f"[评估数据集大小提示]: Max eval dataset size is {max_eval_size}, but got {len(dataset_dict['validation'])}, using {max_eval_size} instead."
+                )
+            dataset_module["eval_dataset"] = (
+                dataset_dict["validation"]
+                if len(dataset_dict["validation"]) < max_eval_size
+                else dataset_dict["validation"].select(range(max_eval_size))
+            )
 
         return dataset_module
