@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import json
 import os
 from copy import deepcopy
 from subprocess import Popen, TimeoutExpired
@@ -21,7 +22,7 @@ from transformers.trainer import TRAINING_ARGS_NAME
 
 from ..extras.constants import LLAMABOARD_CONFIG, PEFT_METHODS, TRAINING_STAGES
 from ..extras.misc import is_gpu_or_npu_available, torch_gc
-from ..extras.packages import is_gradio_available
+from ..extras.packages import is_gradio_available, is_transformers_version_equal_to_4_46
 from .common import DEFAULT_CACHE_DIR, DEFAULT_CONFIG_DIR, QUANTIZATION_BITS, get_save_dir, load_config
 from .locales import ALERTS, LOCALES
 from .utils import abort_process, gen_cmd, get_eval_results, get_trainer_info, load_args, save_args, save_cmd
@@ -78,6 +79,11 @@ class Runner:
             if not get("train.output_dir"):
                 return ALERTS["err_no_output_dir"][lang]
 
+            try:
+                json.loads(get("train.extra_args"))
+            except json.JSONDecodeError:
+                return ALERTS["err_json_schema"][lang]
+
             stage = TRAINING_STAGES[get("train.training_stage")]
             if stage == "ppo" and not get("train.reward_model"):
                 return ALERTS["err_no_reward_model"][lang]
@@ -92,6 +98,7 @@ class Runner:
 
     def _finalize(self, lang: str, finish_info: str) -> str:
         finish_info = ALERTS["info_aborted"][lang] if self.aborted else finish_info
+        gr.Info(finish_info)
         self.trainer = None
         self.aborted = False
         self.running = False
@@ -104,11 +111,6 @@ class Runner:
         model_name, finetuning_type = get("top.model_name"), get("top.finetuning_type")
         user_config = load_config()
 
-        if get("top.quantization_bit") in QUANTIZATION_BITS:
-            quantization_bit = int(get("top.quantization_bit"))
-        else:
-            quantization_bit = None
-
         args = dict(
             stage=TRAINING_STAGES[get("train.training_stage")],
             do_train=True,
@@ -116,13 +118,11 @@ class Runner:
             cache_dir=user_config.get("cache_dir", None),
             preprocessing_num_workers=16,
             finetuning_type=finetuning_type,
-            quantization_bit=quantization_bit,
-            quantization_method=get("top.quantization_method"),
             template=get("top.template"),
             rope_scaling=get("top.rope_scaling") if get("top.rope_scaling") in ["linear", "dynamic"] else None,
             flash_attn="fa2" if get("top.booster") == "flashattn2" else "auto",
             use_unsloth=(get("top.booster") == "unsloth"),
-            visual_inputs=get("top.visual_inputs"),
+            enable_liger_kernel=(get("top.booster") == "liger_kernel"),
             dataset_dir=get("train.dataset_dir"),
             dataset=",".join(get("train.dataset")),
             cutoff_len=get("train.cutoff_len"),
@@ -137,7 +137,6 @@ class Runner:
             save_steps=get("train.save_steps"),
             warmup_steps=get("train.warmup_steps"),
             neftune_noise_alpha=get("train.neftune_alpha") or None,
-            optim=get("train.optim"),
             packing=get("train.packing") or get("train.neat_packing"),
             neat_packing=get("train.neat_packing"),
             train_on_prompt=get("train.train_on_prompt"),
@@ -154,8 +153,9 @@ class Runner:
             pure_bf16=(get("train.compute_type") == "pure_bf16"),
             plot_loss=True,
             ddp_timeout=180000000,
-            include_num_input_tokens_seen=True,
+            include_num_input_tokens_seen=False if is_transformers_version_equal_to_4_46() else True,  # FIXME
         )
+        args.update(json.loads(get("train.extra_args")))
 
         # checkpoints
         if get("top.checkpoint_path"):
@@ -165,6 +165,11 @@ class Runner:
                 )
             else:  # str
                 args["model_name_or_path"] = get_save_dir(model_name, finetuning_type, get("top.checkpoint_path"))
+
+        # quantization
+        if get("top.quantization_bit") in QUANTIZATION_BITS:
+            args["quantization_bit"] = int(get("top.quantization_bit"))
+            args["quantization_method"] = get("top.quantization_method")
 
         # freeze config
         if args["finetuning_type"] == "freeze":
@@ -233,7 +238,7 @@ class Runner:
         if get("train.ds_stage") != "none":
             ds_stage = get("train.ds_stage")
             ds_offload = "offload_" if get("train.ds_offload") else ""
-            args["deepspeed"] = os.path.join(DEFAULT_CACHE_DIR, "ds_z{}_{}config.json".format(ds_stage, ds_offload))
+            args["deepspeed"] = os.path.join(DEFAULT_CACHE_DIR, f"ds_z{ds_stage}_{ds_offload}config.json")
 
         return args
 
@@ -242,24 +247,17 @@ class Runner:
         model_name, finetuning_type = get("top.model_name"), get("top.finetuning_type")
         user_config = load_config()
 
-        if get("top.quantization_bit") in QUANTIZATION_BITS:
-            quantization_bit = int(get("top.quantization_bit"))
-        else:
-            quantization_bit = None
-
         args = dict(
             stage="sft",
             model_name_or_path=get("top.model_path"),
             cache_dir=user_config.get("cache_dir", None),
             preprocessing_num_workers=16,
             finetuning_type=finetuning_type,
-            quantization_bit=quantization_bit,
             quantization_method=get("top.quantization_method"),
             template=get("top.template"),
             rope_scaling=get("top.rope_scaling") if get("top.rope_scaling") in ["linear", "dynamic"] else None,
             flash_attn="fa2" if get("top.booster") == "flashattn2" else "auto",
             use_unsloth=(get("top.booster") == "unsloth"),
-            visual_inputs=get("top.visual_inputs"),
             dataset_dir=get("eval.dataset_dir"),
             eval_dataset=",".join(get("eval.dataset")),
             cutoff_len=get("eval.cutoff_len"),
@@ -277,6 +275,7 @@ class Runner:
         else:
             args["do_eval"] = True
 
+        # checkpoints
         if get("top.checkpoint_path"):
             if finetuning_type in PEFT_METHODS:  # list
                 args["adapter_name_or_path"] = ",".join(
@@ -284,6 +283,11 @@ class Runner:
                 )
             else:  # str
                 args["model_name_or_path"] = get_save_dir(model_name, finetuning_type, get("top.checkpoint_path"))
+
+        # quantization
+        if get("top.quantization_bit") in QUANTIZATION_BITS:
+            args["quantization_bit"] = int(get("top.quantization_bit"))
+            args["quantization_method"] = get("top.quantization_method")
 
         return args
 
@@ -316,7 +320,7 @@ class Runner:
             if args.get("deepspeed", None) is not None:
                 env["FORCE_TORCHRUN"] = "1"
 
-            self.trainer = Popen("llamafactory-cli train {}".format(save_cmd(args)), env=env, shell=True)
+            self.trainer = Popen(["llamafactory-cli", "train", save_cmd(args)], env=env)
             yield from self.monitor()
 
     def _form_config_dict(self, data: Dict["Component", Any]) -> Dict[str, Any]:
@@ -354,6 +358,7 @@ class Runner:
         progress_bar = self.manager.get_elem_by_id("{}.progress_bar".format("train" if self.do_train else "eval"))
         loss_viewer = self.manager.get_elem_by_id("train.loss_viewer") if self.do_train else None
 
+        running_log = ""
         while self.trainer is not None:
             if self.aborted:
                 yield {
@@ -389,7 +394,7 @@ class Runner:
                 finish_info = ALERTS["err_failed"][lang]
 
         return_dict = {
-            output_box: self._finalize(lang, finish_info),
+            output_box: self._finalize(lang, finish_info) + "\n\n" + running_log,
             progress_bar: gr.Slider(visible=False),
         }
         yield return_dict

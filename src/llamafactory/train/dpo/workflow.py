@@ -17,8 +17,9 @@
 
 from typing import TYPE_CHECKING, List, Optional
 
-from ...data import PairwiseDataCollatorWithPadding, get_dataset
+from ...data import PairwiseDataCollatorWithPadding, get_dataset, get_template_and_fix_tokenizer
 from ...extras.constants import IGNORE_INDEX
+from ...extras.misc import cal_effective_tokens
 from ...extras.ploting import plot_loss
 from ...hparams import ModelArguments
 from ...model import load_model, load_tokenizer
@@ -41,13 +42,15 @@ def run_dpo(
 ):
     tokenizer_module = load_tokenizer(model_args)
     tokenizer = tokenizer_module["tokenizer"]
-    dataset_module = get_dataset(model_args, data_args, training_args, stage="rm", **tokenizer_module)
+    template = get_template_and_fix_tokenizer(tokenizer, data_args)
+    dataset_module = get_dataset(template, model_args, data_args, training_args, stage="rm", **tokenizer_module)
     model = load_model(tokenizer, model_args, finetuning_args, training_args.do_train)
 
     data_collator = PairwiseDataCollatorWithPadding(
-        tokenizer=tokenizer,
+        template=template,
         pad_to_multiple_of=8,
         label_pad_token_id=IGNORE_INDEX if data_args.ignore_pad_token_for_loss else tokenizer.pad_token_id,
+        **tokenizer_module,
     )
 
     # Create reference model
@@ -60,7 +63,13 @@ def run_dpo(
         ref_model = None
 
     # Update arguments
-    training_args.remove_unused_columns = False  # important for pairwise dataset
+    training_args.remove_unused_columns = False  # important for multimodal and pairwise dataset
+
+    effective_token_num = 0.0
+    if finetuning_args.include_effective_tokens_per_second:
+        for data in dataset_module["train_dataset"]:
+            effective_token_num += len(data["chosen_input_ids"])
+            effective_token_num += len(data["rejected_input_ids"])
 
     # Initialize our Trainer
     trainer = CustomDPOTrainer(
@@ -77,6 +86,12 @@ def run_dpo(
     # Training
     if training_args.do_train:
         train_result = trainer.train(resume_from_checkpoint=training_args.resume_from_checkpoint)
+
+        if finetuning_args.include_effective_tokens_per_second:
+            train_result.metrics["effective_tokens_per_sec"] = cal_effective_tokens(
+                effective_token_num, train_result.metrics["epoch"], train_result.metrics["train_runtime"]
+            )
+
         trainer.save_model()
         trainer.log_metrics("train", train_result.metrics)
         trainer.save_metrics("train", train_result.metrics)
